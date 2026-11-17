@@ -4,6 +4,8 @@
 
 #include <QStringList>
 
+#include <algorithm>
+
 namespace seb::browser {
 namespace {
 
@@ -63,6 +65,35 @@ void applyWebEngineEnvironment(const seb::settings::browser::BrowserSettings &se
 
     if (!settings.Proxy.BypassList.isEmpty()) {
         flags << QStringLiteral("--proxy-bypass-list=%1").arg(settings.Proxy.BypassList.join(';'));
+    }
+
+    flags.removeDuplicates();
+    qputenv("QTWEBENGINE_CHROMIUM_FLAGS", flags.join(' ').toUtf8());
+#endif
+}
+
+void applyMediaCaptureEnvironment()
+{
+#if SEB_HAS_QTWEBENGINE
+    // Official SEB starts CEF with enable-usermedia-screen-capturing and use-fake-ui-for-media-stream,
+    // so web pages (e.g. proctoring) get camera, microphone and screen capture without a picker.
+    QStringList flags = qEnvironmentVariable("QTWEBENGINE_CHROMIUM_FLAGS").split(' ', Qt::SkipEmptyParts);
+    flags << QStringLiteral("--enable-usermedia-screen-capturing")
+          << QStringLiteral("--use-fake-ui-for-media-stream");
+
+    // On Wayland, Chromium can only capture the screen through PipeWire and the screen-cast portal.
+    if (qEnvironmentVariable("XDG_SESSION_TYPE") == QStringLiteral("wayland") ||
+        !qEnvironmentVariableIsEmpty("WAYLAND_DISPLAY")) {
+        const QString feature = QStringLiteral("WebRTCPipeWireCapturer");
+        const QString prefix = QStringLiteral("--enable-features=");
+        auto existing = std::find_if(flags.begin(), flags.end(), [&prefix](const QString &flag) {
+            return flag.startsWith(prefix);
+        });
+        if (existing == flags.end()) {
+            flags << prefix + feature;
+        } else if (!existing->mid(prefix.size()).split(',').contains(feature)) {
+            existing->append(QLatin1Char(',') + feature);
+        }
     }
 
     flags.removeDuplicates();

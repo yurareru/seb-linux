@@ -122,6 +122,8 @@ WebKitGtkWebView::WebKitGtkWebView(WebKitGtkProfile *profile, QWidget *parent)
         if (!userAgent.isEmpty()) {
             webkit_settings_set_user_agent(settings, userAgent.constData());
         }
+        // Official SEB allows camera, microphone and screen capture (used by in-page proctoring).
+        webkit_settings_set_enable_media_stream(settings, TRUE);
         webkit_web_view_set_settings(WEBKIT_WEB_VIEW(d->webView), settings);
         g_object_unref(settings);
 
@@ -194,6 +196,16 @@ WebKitGtkWebView::WebKitGtkWebView(WebKitGtkProfile *profile, QWidget *parent)
             webkit_policy_decision_ignore(decision);
         }
         return TRUE;
+    }), this);
+
+    g_signal_connect(d->webView, "permission-request", G_CALLBACK(+[](WebKitWebView *,
+                                                                        WebKitPermissionRequest *request,
+                                                                        gpointer) -> gboolean {
+        if (WEBKIT_IS_USER_MEDIA_PERMISSION_REQUEST(request)) {
+            webkit_permission_request_allow(request);
+            return TRUE;
+        }
+        return FALSE;
     }), this);
 
     g_signal_connect(d->webView, "notify::title", G_CALLBACK(+[](WebKitWebView *view, GParamSpec *, gpointer data) {

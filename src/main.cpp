@@ -271,6 +271,7 @@ void applyEarlyEnvironment(int argc, char *argv[])
 #endif
     }
 
+    seb::browser::applyMediaCaptureEnvironment();
 }
 
 }  // namespace

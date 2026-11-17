@@ -16,6 +16,9 @@
 #include <QWebEngineNewWindowRequest>
 #include <QWebEngineScript>
 #include <QWebEngineScriptCollection>
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+#include <QWebEnginePermission>
+#endif
 #include <QAuthenticator>
 #include <QEvent>
 #include <QDragEnterEvent>
@@ -139,6 +142,44 @@ private:
     int restartedRedirects_ = 0;
 };
 
+static void grantMediaCapturePermissions(QWebEnginePage *page)
+{
+    // Official SEB grants camera, microphone and screen capture without prompting (used by
+    // in-page proctoring). The screen itself is picked by Chromium because of the
+    // use-fake-ui-for-media-stream flag (see applyMediaCaptureEnvironment). Other permissions
+    // keep Qt's defaults.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    QObject::connect(page, &QWebEnginePage::permissionRequested, page, [](QWebEnginePermission permission) {
+        switch (permission.permissionType()) {
+        case QWebEnginePermission::PermissionType::MediaAudioCapture:
+        case QWebEnginePermission::PermissionType::MediaVideoCapture:
+        case QWebEnginePermission::PermissionType::MediaAudioVideoCapture:
+        case QWebEnginePermission::PermissionType::DesktopVideoCapture:
+        case QWebEnginePermission::PermissionType::DesktopAudioVideoCapture:
+            permission.grant();
+            break;
+        default:
+            break;
+        }
+    });
+#else
+    QObject::connect(page, &QWebEnginePage::featurePermissionRequested, page,
+        [page](const QUrl &origin, QWebEnginePage::Feature feature) {
+            switch (feature) {
+            case QWebEnginePage::MediaAudioCapture:
+            case QWebEnginePage::MediaVideoCapture:
+            case QWebEnginePage::MediaAudioVideoCapture:
+            case QWebEnginePage::DesktopVideoCapture:
+            case QWebEnginePage::DesktopAudioVideoCapture:
+                page->setFeaturePermission(origin, feature, QWebEnginePage::PermissionGrantedByUser);
+                break;
+            default:
+                break;
+            }
+        });
+#endif
+}
+
 QtWebEngineWebView::QtWebEngineWebView(QtWebEngineProfile *profile, QWidget *parent)
     : IWebView(parent)
 {
@@ -147,6 +188,7 @@ QtWebEngineWebView::QtWebEngineWebView(QtWebEngineProfile *profile, QWidget *par
     view_->installEventFilter(this);
     auto *page = new InterceptingPage(profile->nativeProfile(), this, view_);
     view_->setPage(page);
+    grantMediaCapturePermissions(page);
 
 #if defined(QT_DEBUG) || defined(SEB_DEV_BYPASS_OPTION)
     if (profile->devBypass()) {
