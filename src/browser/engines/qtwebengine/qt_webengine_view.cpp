@@ -102,11 +102,41 @@ protected:
         if (wrapper_->delegate() && !wrapper_->delegate()(url, isMainFrame)) {
             return false;
         }
+
+        if (isMainFrame) {
+            if (type == NavigationTypeRedirect) {
+                if (!wrapper_->restartsMainFrameRedirects() || restartedRedirects_ >= MaximumRestartedRedirects) {
+                    // Let Chromium follow it (and stop redirect loops with its own error page).
+                    return QWebEnginePage::acceptNavigationRequest(url, type, isMainFrame);
+                }
+
+                // Qt WebEngine reuses the original request headers when following a redirect and
+                // drops the headers the URL request interceptor sets for the new URL. The SEB key
+                // hashes would then belong to the previous URL (e.g. the login callback instead of
+                // the quiz page), which servers reject. Official SEB (CEF) recalculates them for
+                // every redirect, so restart the navigation to get headers for the target URL.
+                ++restartedRedirects_;
+                pendingRestartUrl_ = url;
+                QMetaObject::invokeMethod(this, [this, url] { load(url); }, Qt::QueuedConnection);
+                return false;
+            }
+
+            if (url == pendingRestartUrl_) {
+                pendingRestartUrl_.clear();
+            } else {
+                restartedRedirects_ = 0;
+            }
+        }
+
         return QWebEnginePage::acceptNavigationRequest(url, type, isMainFrame);
     }
-    
+
 private:
+    static constexpr int MaximumRestartedRedirects = 20;
+
     QtWebEngineWebView *wrapper_;
+    QUrl pendingRestartUrl_;
+    int restartedRedirects_ = 0;
 };
 
 QtWebEngineWebView::QtWebEngineWebView(QtWebEngineProfile *profile, QWidget *parent)
@@ -264,6 +294,8 @@ void QtWebEngineWebView::initializeSebApi(
     if (sebApiInitialized_ || !keyGenerator || !view_ || !view_->page()) {
         return;
     }
+
+    restartMainFrameRedirects_ = settings.SendConfigurationKey || settings.SendBrowserExamKey;
 
     auto *page = view_->page();
     webChannel_ = new QWebChannel(page);

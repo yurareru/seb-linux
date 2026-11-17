@@ -44,6 +44,7 @@ public:
         const seb::configuration::contracts::AppConfig &appConfig) override;
     const contracts::IWebView::NavigationRequestDelegate& delegate() const { return navigationDelegate_; }
     const contracts::IWebView::FileSelectionDelegate& fileSelectionDelegate() const { return fileSelectionDelegate_; }
+    bool restartsMainFrameRedirects() const { return restartMainFrameRedirects_; }
 
 private:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -51,6 +52,7 @@ private:
     QWebEngineView *view_ = nullptr;
     QWebChannel *webChannel_ = nullptr;
     bool sebApiInitialized_ = false;
+    bool restartMainFrameRedirects_ = false;
     contracts::IWebView::NavigationRequestDelegate navigationDelegate_;
     contracts::IWebView::FileSelectionDelegate fileSelectionDelegate_;
 };
